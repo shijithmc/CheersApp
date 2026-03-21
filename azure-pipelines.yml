@@ -1,0 +1,99 @@
+trigger:
+  - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  backendPath: 'backend/src'
+  adminPath: 'admin'
+  flutterVersion: '3.24.5'
+
+stages:
+  - stage: Backend
+    displayName: 'Backend - C# API'
+    jobs:
+      - job: Build
+        steps:
+          - task: UseDotNet@2
+            displayName: 'Install .NET 10 SDK'
+            inputs:
+              packageType: 'sdk'
+              version: '10.0.x'
+              includePreviewVersions: true
+
+          - script: dotnet restore
+            displayName: 'Restore'
+            workingDirectory: $(backendPath)
+
+          - script: dotnet build --configuration $(buildConfiguration) --no-restore
+            displayName: 'Build'
+            workingDirectory: $(backendPath)
+
+          - script: dotnet publish --configuration $(buildConfiguration) --no-build --output $(Build.ArtifactStagingDirectory)/backend
+            displayName: 'Publish'
+            workingDirectory: $(backendPath)
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Upload Backend Artifact'
+            inputs:
+              PathtoPublish: $(Build.ArtifactStagingDirectory)/backend
+              ArtifactName: 'cheers-api'
+
+  - stage: ConsumerApp
+    displayName: 'Consumer App - Flutter APK'
+    dependsOn: []
+    jobs:
+      - job: Build
+        steps:
+          - script: |
+              git clone https://github.com/flutter/flutter.git -b $(flutterVersion) --depth 1 $(Agent.ToolsDirectory)/flutter
+              echo "##vso[task.prependpath]$(Agent.ToolsDirectory)/flutter/bin"
+            displayName: 'Install Flutter SDK'
+
+          - script: flutter doctor -v
+            displayName: 'Flutter Doctor'
+
+          - script: flutter pub get
+            displayName: 'Get Dependencies'
+
+          - script: flutter create --platforms android .
+            displayName: 'Generate Android Project'
+
+          - script: flutter build apk --release
+            displayName: 'Build APK'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Upload APK Artifact'
+            inputs:
+              PathtoPublish: 'build/app/outputs/flutter-apk/app-release.apk'
+              ArtifactName: 'cheers-apk'
+
+  - stage: AdminPanel
+    displayName: 'Admin Panel - Flutter Web'
+    dependsOn: []
+    jobs:
+      - job: Build
+        steps:
+          - script: |
+              git clone https://github.com/flutter/flutter.git -b $(flutterVersion) --depth 1 $(Agent.ToolsDirectory)/flutter
+              echo "##vso[task.prependpath]$(Agent.ToolsDirectory)/flutter/bin"
+            displayName: 'Install Flutter SDK'
+
+          - script: flutter doctor -v
+            displayName: 'Flutter Doctor'
+
+          - script: flutter pub get
+            displayName: 'Get Dependencies'
+            workingDirectory: $(adminPath)
+
+          - script: flutter build web --release
+            displayName: 'Build Web'
+            workingDirectory: $(adminPath)
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Upload Admin Web Artifact'
+            inputs:
+              PathtoPublish: '$(adminPath)/build/web'
+              ArtifactName: 'cheers-admin-web'
